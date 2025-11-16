@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cattle & Buffalo Breed Recognition</title>
+<style>
+body { font-family: Arial; background:#f2f2f2; margin:0; padding:0; }
+.container { max-width:600px; margin:50px auto; background:#fff; padding:30px; border-radius:10px; box-shadow:0 4px 8px rgba(0,0,0,0.1);}
+h1 { text-align:center; color:#333; }
+input[type="file"] { display:block; margin:20px auto; }
+button { display:block; width:100%; padding:10px; background:#28a745; color:white; border:none; border-radius:5px; cursor:pointer; }
+button:hover { background:#218838; }
+.result { margin-top:20px; padding:15px; background:#e7f3fe; border-left:6px solid #007bff; display:none; }
+select { width:100%; padding:10px; margin-top:10px; }
+#predictionWithImage { display:flex; align-items:center; }
+#animalThumbnail { width:100px; height:100px; object-fit:cover; margin-right:15px; border-radius:8px; border:1px solid #ccc; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Cattle & Buffalo Breed Recognition</h1>
+<form id="breedForm">
+    <input type="file" id="animalImage" accept="image/*" required>
+    <button type="submit">Predict Breed</button>
+</form>
+
+<div class="result" id="resultBox">
+    <h3>Predicted Breed:</h3>
+    <div id="predictionWithImage">
+        <img id="animalThumbnail" src="" alt="Uploaded Animal">
+        <div id="predictedBreed"></div>
+    </div>
+    <label for="confirmBreed">Confirm or select correct breed:</label>
+    <select id="confirmBreed"></select>
+    <button id="registerBtn">Register Animal</button>
+</div>
+</div>
+
+<script>
+const breeds = ["Sahiwal","Gir","Jersey","Murrah","Nili Ravi","Red Sindhi","Kankrej"];
+const form = document.getElementById('breedForm');
+const resultBox = document.getElementById('resultBox');
+const predictedBreed = document.getElementById('predictedBreed');
+const confirmBreed = document.getElementById('confirmBreed');
+const thumbnail = document.getElementById('animalThumbnail');
+
+breeds.forEach(b => {
+    const option = document.createElement("option");
+    option.value = b;
+    option.textContent = b;
+    confirmBreed.appendChild(option);
+});
+
+let currentImagePath = '';
+
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    // Reset any previous results
+    predictedBreed.innerHTML = '';
+    resultBox.style.display = "none";
+    
+    const file = document.getElementById('animalImage').files[0];
+    if(!file) return alert("Select an image.");
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+        return alert('Please select an image file (JPEG, PNG, etc).');
+    }
+    
+    // Validate file size (max 20MB)
+    if (file.size > 20 * 1024 * 1024) {
+        return alert('Image size should be less than 20MB.');
+    }
+
+    // Show image preview
+    thumbnail.src = URL.createObjectURL(file);
+
+    // Prepare form data
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+        // Update button state
+        const submitBtn = e.target.querySelector('button');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Predicting...';
+
+        console.log('Sending prediction request...');
+        const response = await fetch('http://localhost:8000/predict', {
+            method: 'POST',
+            body: formData
+        });
+        
+        // Handle non-OK responses
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Server error:', errorText);
+            throw new Error(errorText || `HTTP error! status: ${response.status}`);
+        }
+        
+        // Parse response data
+        const data = await response.json();
+        console.log('Received predictions:', data);
+
+        // Display predictions
+        if (data.predictions && data.predictions.length > 0) {
+            console.log('Displaying predictions:', data.predictions);
+            data.predictions.forEach((p, i) => {
+                const el = document.createElement('p');
+                el.textContent = `${i+1}. ${p.breed} - ${(p.confidence*100).toFixed(2)}%`;
+                if(i===0) el.style.fontWeight = "bold";
+                predictedBreed.appendChild(el);
+            });
+
+            // Update UI state
+            confirmBreed.value = data.breed || data.predictions[0].breed;
+            resultBox.style.display = "block";
+            currentImagePath = data.image_path;
+        } else {
+            throw new Error('No predictions received from server');
+        }
+
+    } catch(err) {
+        console.error('Prediction error:', err);
+        alert(err.message || 'Error predicting breed. Please try again.');
+    } finally {
+        const submitBtn = e.target.querySelector('button');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Predict Breed';
+    }
+});
+
+document.getElementById('registerBtn').addEventListener('click', async () => {
+    const selectedBreed = confirmBreed.value;
+    if(!selectedBreed) return alert("Select a breed to register.");
+
+    try {
+        const registerBtn = document.getElementById('registerBtn');
+        registerBtn.disabled = true;
+        registerBtn.textContent = 'Registering...';
+
+        const response = await fetch('http://localhost:8000/register', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({breed:selectedBreed, confidence:0.9, image_path:currentImagePath})
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        alert(data.message || "Animal registered successfully!");
+        resultBox.style.display="none";
+    } catch(err) {
+        console.error('Registration error:', err);
+        alert(err.message || 'Error registering animal. Please try again.');
+    } finally {
+        const registerBtn = document.getElementById('registerBtn');
+        registerBtn.disabled = false;
+        registerBtn.textContent = 'Register Animal';
+    }
+});
+</script>
+</body>
+</html>
